@@ -1,0 +1,23 @@
+[
+  {
+    "patient_id": "P1001",
+    "name": "Asha Mehta",
+    "age": 42,
+    "department": "Cardiology",
+    "status": "active"
+  },
+  {
+    "patient_id": "P1002",
+    "name": "Rohan Das",
+    "age": 57,
+    "department": "Endocrinology",
+    "status": "active"
+  },
+  {
+    "patient_id": "P1003",
+    "name": "Mira Shah",
+    "age": 31,
+    "department": "Neurology",
+    "status": "discharged"
+  }
+]

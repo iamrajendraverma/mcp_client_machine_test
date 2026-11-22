@@ -1,0 +1,38 @@
+[
+  {
+    "result_id": "L9001",
+    "patient_id": "P1001",
+    "test": "Hemoglobin",
+    "value": "13.4",
+    "unit": "g/dL",
+    "flag": "normal",
+    "collected_at": "2026-11-18"
+  },
+  {
+    "result_id": "L9002",
+    "patient_id": "P1001",
+    "test": "Potassium",
+    "value": "6.2",
+    "unit": "mmol/L",
+    "flag": "critical",
+    "collected_at": "2026-11-19"
+  },
+  {
+    "result_id": "L9003",
+    "patient_id": "P1002",
+    "test": "HbA1c",
+    "value": "7.1",
+    "unit": "%",
+    "flag": "high",
+    "collected_at": "2026-11-17"
+  },
+  {
+    "result_id": "L9004",
+    "patient_id": "P1003",
+    "test": "Vitamin D",
+    "value": "28",
+    "unit": "ng/mL",
+    "flag": "low",
+    "collected_at": "2026-11-16"
+  }
+]
