@@ -21,13 +21,25 @@ def find_patient(patient_id: str) -> dict:
     return {"found": True, "patient": patient}
 
 @mcp.tool()
-def get_lab_results(patient_id: str, limit: int = 5) -> dict:
-    """Get the most recent synthetic lab results for a patient. Limit must be 1..10."""
+def get_lab_results(patient_id: str, limit: int = 5,offset: int = 0) -> dict:
+    """Get one page of synthetic lab results, newest first. Limit must be 1..10; offset must be >= 0.
+    Use next_offset from the response to fetch the next page; it is null on the last page."""
     if not 1 <= limit <= 10:
         raise ValueError("limit must be between 1 and 10")
+    if offset < 0:
+        raise ValueError("offset must be 0 or greater")
     rows = [r for r in labs if r["patient_id"] == patient_id]
     rows.sort(key=lambda r: r["collected_at"], reverse=True)
-    return {"patient_id": patient_id, "count": min(limit, len(rows)), "results": rows[:limit]}
+    page = rows[offset:offset + limit]
+    next_offset = offset + limit if offset + limit < len(rows) else None
+    return {
+        "patient_id": patient_id,
+        "total": len(rows),
+        "offset": offset,
+        "count": len(page),
+        "next_offset": next_offset,
+        "results": page,
+    }
 
 @mcp.tool()
 def create_support_ticket(patient_id: str, category: str, description: str, confirmed: bool) -> dict:

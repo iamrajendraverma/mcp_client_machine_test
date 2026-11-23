@@ -46,16 +46,21 @@ class MCPClient:
             raise ValueError(f"Tool not discovered: {name}")
         if self.calls >= self.max_calls:
             raise RuntimeError("Tool-call budget exhausted; stopping workflow")
-        self.calls += 1
-        call_id = f"{self.run_id}-{self.calls}"
 
         # Lightweight client-side checks. The server must still validate independently.
+        # These run before the budget is counted, so rejected input does not use a call.
         if name == "get_lab_results":
             limit = arguments.get("limit", 5)
             if not isinstance(limit, int) or not 1 <= limit <= 10:
                 raise ValueError("Client validation: limit must be an integer from 1 to 10")
+            offset = arguments.get("offset", 0)
+            if not isinstance(offset, int) or offset < 0:
+                raise ValueError("Client validation: offset must be an integer of 0 or more")
         if name == "create_support_ticket" and arguments.get("confirmed") is not True:
             raise PermissionError("Ticket creation requires confirmed=True")
+
+        self.calls += 1
+        call_id = f"{self.run_id}-{self.calls}"
 
         attempt = 0
         while True:
@@ -122,6 +127,22 @@ def parse_result(result) -> dict:
         raise ToolResponseError(f"Expected a JSON object, got {type(data).__name__}")
     return data
 
+async def get_all_lab_results(client: "MCPClient", patient_id: str,
+                              page_size: int = 5, max_pages: int = 3) -> list[dict]:
+    """Fetch every lab page for a patient. Each page is one tool call (counts against the budget)."""
+    rows: list[dict] = []
+    offset = 0
+    for _ in range(max_pages):
+        page = parse_result(await client.call_tool(
+            "get_lab_results",
+            {"patient_id": patient_id, "limit": page_size, "offset": offset},
+        ))
+        rows.extend(page.get("results", []))
+        if page.get("next_offset") is None:
+            return rows
+        offset = page["next_offset"]
+    raise RuntimeError(f"Lab pagination stopped after {max_pages} pages; results may be incomplete")
+
 async def run_demo():
     params = StdioServerParameters(
         command=sys.executable,
@@ -145,15 +166,12 @@ async def run_demo():
             print("🧍‍♂️PATIENT RESULT: found =", patient_text.get("found"))
 
             if patient_text.get("found") is True:
-                lab_result = await client.call_tool(
-                    "get_lab_results", {"patient_id": "P1001", "limit": 5}
-                )
-                labs = parse_result(lab_result)
-                flags = [row.get("flag") for row in labs.get("results", [])]
-                print("🧪 LAB RESULT: count =", labs.get("count"), "flags =", flags)
+                rows = await get_all_lab_results(client, "P1001", page_size=5)
+                flags = [row.get("flag") for row in rows]
+                print("🧪 LAB RESULT: count =", len(rows), "flags =", flags)
 
                 # Simple demo routing rule; not a medical interpretation.
-                if any(row.get("flag") == "critical" for row in labs.get("results", [])):
+                if any(row.get("flag") == "critical" for row in rows):
                     escalation = await client.call_tool(
                         "escalate_to_human",
                         {"patient_id": "P1001",
