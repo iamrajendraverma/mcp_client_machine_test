@@ -6,7 +6,8 @@ from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-
+import sys
+import uuid
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
 SERVER = Path(__file__).with_name("server.py")
@@ -18,6 +19,7 @@ class MCPClient:
         self.max_calls = max_calls
         self.calls = 0
         self.available_tools = {}
+        self.run_id = uuid.uuid4().hex[:8]   # one ID for this workflow run
 
     async def discover_tools(self):
         response = await self.session.list_tools()
@@ -34,6 +36,7 @@ class MCPClient:
         if self.calls >= self.max_calls:
             raise RuntimeError("Tool-call budget exhausted; stopping workflow")
         self.calls += 1
+        call_id = f"{self.run_id}-{self.calls}"
 
         # Lightweight client-side checks. The server must still validate independently.
         if name == "get_lab_results":
@@ -49,8 +52,8 @@ class MCPClient:
             try:
                 result = await self.session.call_tool(name, arguments)
                 elapsed = round((time.perf_counter() - started) * 1000, 2)
-                logging.info("tool=%s args=%s duration_ms=%s is_error=%s",
-                             name, redact(arguments), elapsed, result.isError)
+                logging.info("run=%s call=%s tool=%s args=%s duration_ms=%s is_error=%s",
+                             self.run_id, call_id, name, redact(arguments), elapsed, result.isError)
                 if result.isError:
                     # Do not blindly retry validation/business errors.
                     raise RuntimeError(extract_text(result))
@@ -69,15 +72,37 @@ def redact(args):
     return safe
 
 def extract_text(result):
+    """
+    extract_text function extract the result of toolcall function
+    """
     parts = []
     for item in result.content:
         if hasattr(item, "text") and item.text:
             parts.append(item.text)
     return "\\n".join(parts) or "Tool returned no text content"
 
+class ToolResponseError(Exception):
+    pass
+
+def parse_result(result) -> dict:
+    """Turn a CallToolResult into a dict, or raise ToolResponseError."""
+    if result.isError:
+        raise ToolResponseError(extract_text(result))
+    if result.structuredContent is not None:
+        data = result.structuredContent
+    else:
+        text = extract_text(result)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ToolResponseError(f"Non-JSON tool response: {text[:200]}") from exc
+    if not isinstance(data, dict):
+        raise ToolResponseError(f"Expected a JSON object, got {type(data).__name__}")
+    return data
+
 async def run_demo():
     params = StdioServerParameters(
-        command="python",
+        command=sys.executable,
         args=[str(SERVER)],
         env=None
     )
@@ -94,27 +119,29 @@ async def run_demo():
 
             # Workflow: identify patient -> fetch labs -> escalate critical result.
             patient_result = await client.call_tool("find_patient", {"patient_id": "P1001"})
-            patient_text = extract_text(patient_result)
-            print("\\nPATIENT RESULT:", patient_text)
+            patient_text = parse_result(patient_result)
+            print("🧍‍♂️PATIENT RESULT: found =", patient_text.get("found"))
 
-            if "found" in patient_text.lower() and "false" not in patient_text.lower():
+            if patient_text.get("found") is True:
                 lab_result = await client.call_tool(
                     "get_lab_results", {"patient_id": "P1001", "limit": 5}
                 )
-                lab_text = extract_text(lab_result)
-                print("\\nLAB RESULT:", lab_text)
+                labs = parse_result(lab_result)
+                flags = [row.get("flag") for row in labs.get("results", [])]
+                print("🧪 LAB RESULT: count =", labs.get("count"), "flags =", flags)
 
                 # Simple demo routing rule; not a medical interpretation.
-                if "critical" in lab_text.lower():
+                if any(row.get("flag") == "critical" for row in labs.get("results", [])):
                     escalation = await client.call_tool(
                         "escalate_to_human",
                         {"patient_id": "P1001",
                          "reason": "A lab record is flagged critical; please review.",
                          "priority": "urgent"}
                     )
-                    print("\\nESCALATION:", extract_text(escalation))
+                    esc = parse_result(escalation)
+                    print("ESCALATION: id =", esc.get("escalation_id"), "status =", esc.get("status"))
 
-            print("\\nCLIENT FINISHED. Tool calls:", client.calls)
+            print("CLIENT FINISHED. Tool calls:", client.calls)
 
 if __name__ == "__main__":
     asyncio.run(run_demo())
