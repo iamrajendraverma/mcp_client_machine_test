@@ -14,12 +14,13 @@ SERVER = Path(__file__).with_name("server.py")
 MAX_CALL_THRESHOLD =5
 
 class MCPClient:
-    def __init__(self, session: ClientSession, max_calls: int = 5):
+    def __init__(self, session: ClientSession, max_calls: int = 5, time_out: float = 5.0):
         self.session = session
         self.max_calls = max_calls
         self.calls = 0
         self.available_tools = {}
         self.run_id = uuid.uuid4().hex[:8]   # one ID for this workflow run
+        self.time_out = time_out
 
     async def discover_tools(self):
         response = await self.session.list_tools()
@@ -50,7 +51,10 @@ class MCPClient:
         while True:
             started = time.perf_counter()
             try:
-                result = await self.session.call_tool(name, arguments)
+                result = await asyncio.wait_for(
+                    self.session.call_tool(name, arguments),
+                    timeout=self.time_out,
+                )
                 elapsed = round((time.perf_counter() - started) * 1000, 2)
                 logging.info("run=%s call=%s tool=%s args=%s duration_ms=%s is_error=%s",
                              self.run_id, call_id, name, redact(arguments), elapsed, result.isError)
@@ -114,7 +118,7 @@ async def run_demo():
             print(f"Connected server name {init.serverInfo.name} and server version {init.serverInfo.version}")
             print("========================")
 
-            client = MCPClient(session, max_calls=MAX_CALL_THRESHOLD)
+            client = MCPClient(session, max_calls=MAX_CALL_THRESHOLD,time_out=30000)
             await client.discover_tools()
 
             # Workflow: identify patient -> fetch labs -> escalate critical result.
