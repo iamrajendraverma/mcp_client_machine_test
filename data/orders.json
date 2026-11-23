@@ -1,0 +1,42 @@
+[
+  {
+    "order_id": "O2001",
+    "patient_id": "P1001",
+    "item": "Aspirin 81 mg tablets",
+    "quantity": 30,
+    "status": "dispensed",
+    "ordered_at": "2026-11-18T09:15:00"
+  },
+  {
+    "order_id": "O2002",
+    "patient_id": "P1001",
+    "item": "Blood pressure monitor cuff (adult)",
+    "quantity": 1,
+    "status": "pending",
+    "ordered_at": "2026-11-20T14:40:00"
+  },
+  {
+    "order_id": "O2003",
+    "patient_id": "P1002",
+    "item": "Glucose test strips",
+    "quantity": 100,
+    "status": "shipped",
+    "ordered_at": "2026-11-19T11:05:00"
+  },
+  {
+    "order_id": "O2004",
+    "patient_id": "P1002",
+    "item": "Insulin pen needles",
+    "quantity": 50,
+    "status": "cancelled",
+    "ordered_at": "2026-11-15T08:30:00"
+  },
+  {
+    "order_id": "O2005",
+    "patient_id": "P1003",
+    "item": "Physiotherapy session booking",
+    "quantity": 4,
+    "status": "completed",
+    "ordered_at": "2026-11-10T16:20:00"
+  }
+]

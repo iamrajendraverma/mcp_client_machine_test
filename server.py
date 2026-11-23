@@ -1,3 +1,4 @@
+from hashlib import new
 import json
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
@@ -5,6 +6,7 @@ from mcp.server.fastmcp import FastMCP
 BASE = Path(__file__).parent
 patients = json.loads((BASE / "data/patients.json").read_text())
 labs = json.loads((BASE / "data/lab_results.json").read_text())
+orders =json.loads((BASE/"data/orders.json").read_text())
 tickets = []
 escalations = []
 
@@ -50,6 +52,13 @@ def escalate_to_human(patient_id: str, reason: str, priority: str = "high") -> d
             "reason": reason, "priority": priority, "status": "queued"}
     escalations.append(item)
     return item
+@mcp.tool()
+def lookup_order(order_id):
+    "Get the order by order id"
+    order = next((o for o in orders if o["order_id"] == order_id), None)
+    if not order:
+        return {"found": False, "message": "Order not found"}
+    return {"found": True, "order": order}
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
