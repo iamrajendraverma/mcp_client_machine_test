@@ -13,6 +13,9 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 SERVER = Path(__file__).with_name("server.py")
 MAX_CALL_THRESHOLD =5
 
+class WorkflowCancelled(Exception):
+    pass
+
 class MCPClient:
     def __init__(self, session: ClientSession, max_calls: int = 5, time_out: float = 5.0):
         self.session = session
@@ -21,6 +24,11 @@ class MCPClient:
         self.available_tools = {}
         self.run_id = uuid.uuid4().hex[:8]   # one ID for this workflow run
         self.time_out = time_out
+        self._cancelled = False
+
+    def cancel(self):
+        """Stop the workflow before the next tool call or retry."""
+        self._cancelled = True
 
     async def discover_tools(self):
         response = await self.session.list_tools()
@@ -32,6 +40,8 @@ class MCPClient:
         return response.tools
 
     async def call_tool(self, name: str, arguments: dict, retries: int = 2):
+        if self._cancelled:
+            raise WorkflowCancelled("Workflow was cancelled before the tool call")
         if name not in self.available_tools:
             raise ValueError(f"Tool not discovered: {name}")
         if self.calls >= self.max_calls:
@@ -49,6 +59,8 @@ class MCPClient:
 
         attempt = 0
         while True:
+            if self._cancelled:
+                raise WorkflowCancelled("Workflow was cancelled before a retry")
             started = time.perf_counter()
             try:
                 result = await asyncio.wait_for(
@@ -62,11 +74,17 @@ class MCPClient:
                     # Do not blindly retry validation/business errors.
                     raise RuntimeError(extract_text(result))
                 return result
+            except asyncio.CancelledError:
+                logging.warning("run=%s call=%s tool=%s status=cancelled",
+                                self.run_id, call_id, name)
+                raise
             except (TimeoutError, ConnectionError):
-                if attempt >= retries:
+                if attempt >= retries or self._cancelled:
                     raise
                 attempt += 1
                 await asyncio.sleep(0.25 * attempt)
+                if self._cancelled:
+                    raise WorkflowCancelled("Workflow was cancelled during retry wait")
 
 def redact(args):
     safe = dict(args)
