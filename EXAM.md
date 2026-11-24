@@ -34,7 +34,7 @@
 
 #### Viva Answer
 
-1. What is the difference between **tool/call** and **tool/list** ?
+##### 1. What is the difference between **tool/call** and **tool/list** ?
 Ans : tool/list  and tool/call are two important operation in MCP. We call tool/list as tool discovery also. It gives the list of all tools avaiable in MCP at the response. tool/call is to request the perticular tool to fix the problem. It gives one tool schema in the response. 
 
 
@@ -124,7 +124,7 @@ Ans : tool/list  and tool/call are two important operation in MCP. We call tool/
   }
 }
 ```
-2. Who defines the input schema, client or server ? 
+##### 2. Who defines the input schema, client or server ? 
 Ans : Input schema defines by MCP server developers.
 
 ```python 
@@ -161,7 +161,7 @@ Read the schema & prepare valid argument
      execute the function
 ```
 
-3. What happens during `initialize()`?
+##### 3. What happens during `initialize()`?
 
 Ans : Client Start the MCP communication. `initialize()` performs the initial handshake between the MCP Client and MCP Server.
 
@@ -220,3 +220,179 @@ Tool response
 ```
 
 `initialize()` establishes the communication session. It does not execute tools or retrieve the tool list.
+
+##### 4. Why should the server validate arguments even if the client validates them?
+
+Ans : This is a kind of two steps verification, where client and server both can validates the same verfication. A MCP server can integrate with many client, which may not have the verifcation so that safety as concern two step verfication is good. 
+
+##### 5. What does `CallToolResult.isError` mean?
+
+Ans : `CallToolResult.isError` It is mention by the MCP server with the tool call. If its value is `false` then client treat, the tool-call is sucessful and if `true` then this is a signal of call failure and client retries it as per type of error 
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Service temporarily unavailable"
+    }
+  ],
+  "structuredContent": {
+    "error_code": "SERVICE_UNAVAILABLE",
+    "retryable": true,
+    "retry_after": 5
+  },
+  "isError": true
+}
+```
+As above json example, errorType is not directly exposed,it is mention in structuredContent error_code,retryable and retry_after. based on this information the client ties it
+
+##### 6. Why is stdio useful for a local MCP server?
+
+Ans : stdio (standard i/o) is useful for the local MCP server because it allow the MCP client and server to communicate directly with the os standard input and output.
+
+How does it works 
+
+```text 
+                MCP client 
+                  ↑↓
+                stdin/stdout
+                JSON -RPC 
+                local MCP  process
+ ```
+Benifit : 
+
+1. No network required 
+2. Direct process the communication 
+3. Client launch the server
+4. Communication stays with in local process
+5. Easy life cycle , client can manage server startup & shutdown.
+
+
+
+#####  7. What is the difference between a protocol error and a tool execution error?
+
+Ans : Error in the process of making a tool-call, for example invalid JSON-RPC request,unknown method, invalid request parameters and invalid request structure is called protocal error. 
+Example response:
+
+```json 
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32601,
+    "message": "Method not found"
+  }
+}
+```
+Here:
+
+- error.code → Error code.
+- error.message → Error description.
+- error → JSON-RPC protocol error object.
+
+On other hand, the request is valid, but the actual tool operation fails. For example jira API authentication get failed,database connection timeout, External API returned HTTP 503 or business resources not found. 
+
+Example response:
+
+```json 
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Jira authentication failed"
+      }
+    ],
+    "isError": true
+  }
+}
+```
+Here:
+- result → Valid JSON-RPC response.
+- content → Error details.
+- isError: true → Tool execution failed.
+
+#####  8. Why should a write operation require confirmation?
+
+Ans : A write oeration require confirmation becuase it make changes in the external system. A confirmation prevents un-intentional changes, it include creating jira-tickets,updating a database records,deleting a file, sending an email or modifying issue it github. 
+
+##### 9. Why must retries be bounded and selective?
+
+Ans : Retries must be limited and carefully choosen(Bounded and Selective), becasue repeatatively executing failed tool-call s can wastage resrouces, overload external resources and duplicate operations. 
+
+Selective retry tips 
+
+- Temporary failure : 
+Network timeout,Http 503, Http429, Http401
+- But not Permanent failure : invalid parameters, Permission denided. 
+
+Important security concept : 
+
+Mcp provides tool annotation **readOnlyHint** and **destructiveHint**
+
+Let's discuss code 
+
+```python 
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("Banking Server")
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": False,
+        "openWorldHint": True
+    }
+)
+def transfer_money(
+    from_account: str,
+    to_account: str,
+    amount: float
+) -> str:
+    """Transfer money between bank accounts."""
+
+    if amount <= 0:
+        raise ValueError("Amount must be greater than zero")
+
+    if from_account == to_account:
+        raise ValueError("Cannot transfer to the same account")
+
+    # Actual banking API integration would go here.
+    return (
+        f"Successfully transferred {amount} "
+        f"from {from_account} to {to_account}"
+    )
+
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")
+```
+
+Understanding the annotations  
+
+| Annotation | Value | Reason |
+|---|---|---|
+| readOnlyHint | False | Money transfer modifies account balances |
+| destructiveHint | True | Financial operation has significant consequences |
+| idempotentHint | False | Repeating a transfer could transfer money twice |
+| openWorldHint | True | Interacts with an external banking system |
+
+
+##### 10. What prevents an agent from repeatedly calling tools forever?
+
+Ans : Agents are limitless hourse 🏇🏻 to control agents we use bounded execution and termination controls. 
+
+```text 
+max_turn -> limit number of agent iteration 
+max tool_calls -> limit total tool calls 
+timeout -> stop execution after a time limit
+cancellation -> Allow execution to be stopped 
+stop-condition -> End the workflow when budget is acheived. 
+retry limit -> prevents repeated retires of failed tools 
+bedget limit -> Control token or API cost
+```
